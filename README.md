@@ -38,21 +38,20 @@ PyOS/
 ### Prerequisites
 - **Python 3.10+** (uses only the Python Standard Library—zero external `pip` installs required!)
 
-### Installation & Running
-1. Clone the repository:
+### Installation & Setup
+1. Download PyOS and open the folder:
    ```bash
-   git clone https://github.com<your-github-username>/PyOS.git
-   cd PyOS
+   cd ~ && git clone https://github.com && cd PyOS
    ```
-2. Launch the **GUI Terminal** (recommended):
+2. Launch PyOS to run first-time setup (creates your user account and `~/` folders):
    ```bash
    python3 gui.py
    ```
-   *Or launch the **CLI Terminal**:*
+   *Or run in CLI mode:*
    ```bash
    python3 main.py
    ```
-3. Create your username and password on first boot to initialize your `~/` home directory.
+3. Enter a new username and password when prompted, and you're ready to start using PyOS!
 
 ---
 
