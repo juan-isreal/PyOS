@@ -112,3 +112,5 @@ test_*.py
 scratch.py
 tmp/
 temp/
+# git stuff
+.git/
