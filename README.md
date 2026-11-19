@@ -1,17 +1,17 @@
-# PyOS — Python Terminal Operating System
+# PyOS — Python Operating System
 
-A lightweight, sandboxed **Terminal Operating System** built entirely in Python with both a **macOS-inspired Tkinter GUI** (`gui.py`) and a **CLI mode** (`main.py`), featuring salted PBKDF2 authentication, a virtual `~/` filesystem, command chaining (`&&`), and a modular plugin SDK (`tsdk`).
+A lightweight, sandboxed **Terminal & Desktop Operating System** built entirely in Python with both a **macOS-inspired Tkinter GUI** (`gui.py`), a **Linux-style Desktop Environment** (`startx`), and a **CLI mode** (`main.py`), featuring salted PBKDF2 authentication, a virtual `~/` filesystem with `~/usr/bin`, command chaining (`&&`), a universal package manager (`pypm`), and a modular plugin SDK (`tsdk`).
 
 ---
 
 ## Features
 
-- **Dual Interface (`gui.py` & `main.py`):** Launch a dark-mode macOS-style Tkinter terminal window with arrow-key history and masked password input, or run directly in your native terminal.
+- **Dual Interface + Desktop Mode (`gui.py`, `main.py`, & `startx`):** Launch a dark-mode macOS-style Tkinter terminal window with arrow-key history and masked password input, run in native CLI mode, or type `startx` to switch into a graphical Linux-style desktop with draggable windows.
+- **Universal Package Manager (`pypm`) & `PATH`:** Install PyOS plugins from `registry.json`, pull prebuilt binaries directly from GitHub Releases (`pypm install owner/repo`), install Python CLI tools from PyPI (`pypm install --pip <pkg>`), or link host system commands (`pypm link git`) into `~/usr/bin`.
 - **Cryptographic Authentication:** Uses `PBKDF2-HMAC-SHA256` with unique 16-byte random salts (`secrets.token_hex`) and randomized iteration counts (`90,000–120,000`) stored in `iterations:salt:hash` format.
-- **Sandboxed Virtual Filesystem (`~/`):** Automatically provisions and self-heals `Desktop/`, `Documents/`, `Downloads/`, and `Projects/` per user while blocking directory traversal outside `~/`.
-- **Command Chaining (`&&`):** Chain multiple system commands and custom plugins on a single line (e.g., `mkdir app && cd app && touch main.py utils.py && ls`).
-- **Built-in Transpiler & Bytecode Runner (`compile` & `run`):** Uses Python's `ast` module to rewrite `input()` and `print()` into `tsdk.ask()` and `tsdk.out()`, compiling scripts into `.pyc` bytecode that runs live inside the GUI.
-- **Modular Plugin Architecture (`commands/` + `tsdk`):** Drop any `.py` file with a `run(args, context)` function into `commands/` to extend PyOS, or mark commands Out Of Service (`COOS`).
+- **Sandboxed Virtual Filesystem (`~/`):** Automatically provisions and self-heals `Desktop/`, `Documents/`, `Downloads/`, `Projects/`, `usr/bin/`, and `usr/local/bin/` per user while blocking directory traversal outside `~/`.
+- **Command Chaining (`&&`):** Chain multiple system commands and custom apps on a single line (e.g., `mkdir app && cd app && touch main.py utils.py && tree`).
+- **Modular Plugin SDK (`tsdk`):** Drop any `.py` file with a `run(args, context)` function into `commands/` or `~/usr/bin/` to extend PyOS, or mark commands Out Of Service (`COOS`).
 
 ---
 
@@ -21,14 +21,15 @@ A lightweight, sandboxed **Terminal Operating System** built entirely in Python 
 PyOS/
 ├── gui.py            # Dark-mode Tkinter macOS Terminal GUI
 ├── main.py           # CLI bootloader and shell loop
-├── system_cmds.py    # Built-in OS commands (ls, cd, mkdir, touch, cat, rm, run, repass, help)
-├── utils.py          # PBKDF2 hashing, shlex parser, and dynamic plugin loader
-├── tsdk.py           # Terminal SDK for building interactive CLI + GUI apps
-└── commands/         # Custom user plugins & apps
-    ├── compile.py    # AST transpiler & .pyc bytecode compiler
+├── system_cmds.py    # Built-in OS commands (pypm, path, ls, tree, cd, mkdir, cat, rm, run, help)
+├── utils.py          # PBKDF2 hashing, shlex parser, and cached PATH plugin loader
+├── tsdk.py           # Terminal & Desktop SDK for building interactive CLI + GUI apps
+├── registry.json     # Package store index for pypm
+└── commands/         # Core pre-installed apps & plugins
+    ├── startx.py     # Graphical Linux-style Desktop Environment
     ├── edit.py       # Full-screen modular text/code editor
     ├── example.py    # Developer showcase for tsdk primitives
-    └── git.py        # Git & GitHub CLI wrapper
+    └── coos.py       # Out-Of-Service command manager
 ```
 
 ---
@@ -39,9 +40,9 @@ PyOS/
 - **Python 3.10+** (uses only the Python Standard Library—zero external `pip` installs required!)
 
 ### Installation & Setup
-1. Download PyOS and open the folder:
+1. Clone PyOS and open the folder:
    ```bash
-   cd ~ && git clone https://github.com/juan-isreal/PyOS.git && cd PyOS
+   cd ~ && git clone https://github.com && cd PyOS
    ```
 2. Launch PyOS to run first-time setup (creates your user account and `~/` folders):
    ```bash
@@ -51,7 +52,7 @@ PyOS/
    ```bash
    python3 main.py
    ```
-3. Enter a new username and password when prompted, and you're ready to start using PyOS!
+3. Enter a new username and password when prompted, then type `help` or `startx` to explore!
 
 ---
 
@@ -59,15 +60,17 @@ PyOS/
 
 | Command | Description |
 | :--- | :--- |
-| `help` | List all built-in system commands and installed custom plugins |
-| `ls` | List files and folders in the current directory |
+| `help` | List all built-in system commands and installed `PATH` apps |
+| `pypm` | Install, search, link, inspect, or remove packages (`pypm install <name\|owner/repo>`) |
+| `path` | View or add/remove directories in your virtual `PATH` |
+| `startx` | Launch the graphical Linux-style Desktop Environment |
+| `ls` / `tree` | List files or display a visual directory tree |
 | `cd <path>` | Change directory (`~`, `..`, or relative paths inside `~/`) |
 | `pwd` | Print current virtual path |
-| `mkdir <dirs...>` | Create one or more folders |
-| `touch <files...>` | Create one or more empty files |
-| `cat <files...>` | Display the contents of one or more files |
-| `rm <items...>` | Delete one or more files or folders |
+| `mkdir` / `touch` | Create one or more folders or empty files |
+| `cat` / `rm` | Read or delete one or more files or folders |
 | `run <file>` | Execute a `.py`, `.pyc`, or native executable |
+| `sysinfo` | Display user, Python version, and `PATH` status |
 | `repass <old> <new>` | Update your password (re-salted with new random iterations) |
 | `clear` | Clear the terminal screen |
 | `logout` / `exit` | Lock session or exit PyOS |
@@ -76,7 +79,7 @@ PyOS/
 
 ## Building Custom Commands (`tsdk`)
 
-Create any `.py` file inside `commands/` with a `run(args, context)` function. Use `tsdk` so your app works seamlessly in both `gui.py` and `main.py`:
+Create any `.py` file inside `commands/` or `~/usr/bin/` with a `run(args, context)` function. Use `tsdk` so your app works seamlessly in both `gui.py` and `main.py`:
 
 ```python
 import tsdk
