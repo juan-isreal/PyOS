@@ -114,3 +114,4 @@ tmp/
 temp/
 # git stuff
 .git/
+update.sh
