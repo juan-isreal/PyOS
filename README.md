@@ -42,11 +42,11 @@ PyOS/
 ### Quick Install (Latest Release — Recommended)
 Download, extract, and launch the latest PyOS release automatically in one command:
 ```bash
-curl -fsSL https://githubusercontent.com -o install.sh && bash install.sh && rm -f install.sh
+curl -fsSL https://raw.githubusercontent.com/juan-isreal/PyOS/refs/heads/main/install.sh -o install.sh && bash install.sh && rm -f install.sh
 ```
 To launch in CLI mode instead of the GUI, run 
 ```bash
-curl -fsSL https://githubusercontent.com -o install.sh && bash install.sh --cli && rm -f install.sh
+curl -fsSL https://raw.githubusercontent.com/juan-isreal/PyOS/refs/heads/main/install.sh -o install.sh && bash install.sh --cli && rm -f install.sh
 ```
 
 ### Manual Source Setup (Developers)
