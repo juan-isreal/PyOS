@@ -13,16 +13,14 @@ FILE_NAME = os.path.join(BASE_DIR, "data.json")
 COMMANDS_DIR = os.path.join(BASE_DIR, "commands")
 FILES_ROOT = os.path.join(BASE_DIR, "files", "users")
 
-if not os.path.isdir(COMMANDS_DIR):
-    os.makedirs(COMMANDS_DIR)
-if not os.path.isdir(FILES_ROOT):
-    os.makedirs(FILES_ROOT)
+os.makedirs(COMMANDS_DIR, exist_ok=True)
+os.makedirs(FILES_ROOT, exist_ok=True)
 
 
 class MacOSTerminalApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Terminal — bash — 80x24")
+        self.root.title("PyOS Terminal")
         self.root.geometry("760x480")
         self.root.configure(bg="#1E1E1E")
 
@@ -61,6 +59,13 @@ class MacOSTerminalApp:
         tsdk._gui_print = lambda text: self.root.after(0, lambda: self.write(text))
         tsdk._gui_ask = self.gui_ask_from_thread
         tsdk._gui_clear = lambda: self.root.after(0, self.clear_screen)
+        tsdk._gui_run_on_ui = lambda fn: self.root.after(0, fn)
+        tsdk._gui_get_root = lambda: self.root
+        tsdk._gui_hide_term = self.text.pack_forget
+        tsdk._gui_show_term = lambda: (
+            self.text.pack(fill="both", expand=True),
+            self.text.focus_set(),
+        )
 
         self.text.bind("<Return>", self.on_enter)
         self.text.bind("<BackSpace>", self.on_backspace)
@@ -116,6 +121,16 @@ class MacOSTerminalApp:
         user_home = os.path.join(FILES_ROOT, self.data["username"])
         utils.ensure_user_dirs(user_home)
 
+        usr_local_bin = os.path.join(user_home, "usr", "local", "bin")
+        usr_bin = os.path.join(user_home, "usr", "bin")
+        os.makedirs(usr_local_bin, exist_ok=True)
+        os.makedirs(usr_bin, exist_ok=True)
+
+        saved_path = utils.load_json(
+            os.path.join(usr_bin, ".path.json"),
+            default_data=[usr_local_bin, usr_bin, COMMANDS_DIR],
+        )
+
         def change_password(old_pass, new_pass):
             if not utils.verify_password(old_pass, self.data["password_hash"]):
                 return False, "Error: Current password is incorrect."
@@ -129,6 +144,7 @@ class MacOSTerminalApp:
             "commands_dir": COMMANDS_DIR,
             "home_dir": user_home,
             "cwd": user_home,
+            "PATH": saved_path,
             "COOS": [],
             "verify_password": lambda attempt: utils.verify_password(
                 attempt, self.data["password_hash"]
@@ -140,13 +156,13 @@ class MacOSTerminalApp:
                 "ensure_user_dirs": utils.ensure_user_dirs,
             },
         }
-        utils.scan_commands(COMMANDS_DIR, self.safe_context)
+        utils.scan_commands(self.safe_context["PATH"], self.safe_context)
         self.show_shell_prompt()
 
     def show_shell_prompt(self):
         rel_path = os.path.relpath(self.safe_context["cwd"], self.safe_context["home_dir"])
         prompt_path = "~" if rel_path == "." else f"~/{rel_path}"
-        self.root.title(f"{self.data['username']} — {prompt_path} — TOS")
+        self.root.title(f"{self.data['username']} - {prompt_path} - PyOS")
         self.prompt_user(f"{self.data['username']}:{prompt_path} $ ", secret=False)
     def on_click(self, event):
         self.root.after(1, lambda: self.text.mark_set("insert", "end"))
@@ -274,7 +290,7 @@ class MacOSTerminalApp:
     def _run_chained_worker(self, raw):
         chained = utils.split_chained_commands(raw)
         for parts in chained:
-            cmd = parts[0].lower()
+            cmd = next(iter(parts)).lower()
             args = parts[1:]
 
             if cmd in ("quit", "exit"):
@@ -300,7 +316,7 @@ class MacOSTerminalApp:
             try:
                 if not system_cmds.handle_system_command(cmd, args, self.safe_context):
                     rebuilt_cmd = " ".join(shlex.quote(p) for p in parts)
-                    utils.run_command(rebuilt_cmd, COMMANDS_DIR, self.safe_context)
+                    utils.run_command(rebuilt_cmd, self.safe_context["PATH"], self.safe_context)
             finally:
                 sys.stdout = old_stdout
 

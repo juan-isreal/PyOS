@@ -14,15 +14,11 @@ FILE_NAME = os.path.join(BASE_DIR, "data.json")
 COMMANDS_DIR = os.path.join(BASE_DIR, "commands")
 FILES_ROOT = os.path.join(BASE_DIR, "files", "users")
 
-if not os.path.isdir(COMMANDS_DIR):
-    os.makedirs(COMMANDS_DIR)
-if not os.path.isdir(FILES_ROOT):
-    os.makedirs(FILES_ROOT)
+os.makedirs(COMMANDS_DIR, exist_ok=True)
+os.makedirs(FILES_ROOT, exist_ok=True)
 
-# 1. Load existing file or create an empty JSON object
 data = utils.load_json(FILE_NAME, default_data={})
 
-# 2. Run setup if username or password_hash is missing or invalid
 if len(data.get("username") or "") <= 1 or not data.get("password_hash"):
     username = utils.valid_input(
         "Create Username: ", 1, "Invalid Username. Must be more than 1 character."
@@ -40,7 +36,6 @@ if len(data.get("username") or "") <= 1 or not data.get("password_hash"):
     }
     utils.save_json(FILE_NAME, data)
 
-# 3. Handle login if they are currently logged out
 if not data.get("is_logged_in", False):
     for _ in range(3):
         utry = input("Username: ")
@@ -54,9 +49,18 @@ if not data.get("is_logged_in", False):
         print("Too many failed attempts.")
         exit()
 
-# 4. Build the user's virtual home directory tree (~/) individually
 USER_HOME = os.path.join(FILES_ROOT, data["username"])
 utils.ensure_user_dirs(USER_HOME)
+
+USR_LOCAL_BIN = os.path.join(USER_HOME, "usr", "local", "bin")
+USR_BIN = os.path.join(USER_HOME, "usr", "bin")
+os.makedirs(USR_LOCAL_BIN, exist_ok=True)
+os.makedirs(USR_BIN, exist_ok=True)
+
+saved_path = utils.load_json(
+    os.path.join(USR_BIN, ".path.json"),
+    default_data=[USR_LOCAL_BIN, USR_BIN, COMMANDS_DIR],
+)
 
 
 def change_password(old_pass, new_pass):
@@ -68,12 +72,12 @@ def change_password(old_pass, new_pass):
     return True, "Password successfully updated!"
 
 
-# 5. Safe context passed to both system commands and custom plugins
 safe_context = {
     "username": data["username"],
     "commands_dir": COMMANDS_DIR,
     "home_dir": USER_HOME,
     "cwd": USER_HOME,
+    "PATH": saved_path,
     "COOS": [],
     "verify_password": lambda attempt: utils.verify_password(attempt, data["password_hash"]),
     "change_password": change_password,
@@ -83,12 +87,11 @@ safe_context = {
         "ensure_user_dirs": utils.ensure_user_dirs,
     },
 }
-utils.scan_commands(COMMANDS_DIR, safe_context)
+utils.scan_commands(safe_context["PATH"], safe_context)
 
 if readline:
     readline.clear_history()
 
-# 6. Main terminal loop
 running = True
 while running:
     rel_path = os.path.relpath(safe_context["cwd"], USER_HOME)
@@ -99,7 +102,7 @@ while running:
 
     chained = utils.split_chained_commands(raw)
     for parts in chained:
-        cmd = parts[0].lower()
+        cmd = next(iter(parts)).lower()
         args = parts[1:]
 
         if cmd in ("quit", "exit"):
@@ -114,4 +117,4 @@ while running:
 
         elif not system_cmds.handle_system_command(cmd, args, safe_context):
             rebuilt_cmd = " ".join(shlex.quote(p) for p in parts)
-            utils.run_command(rebuilt_cmd, COMMANDS_DIR, safe_context)
+            utils.run_command(rebuilt_cmd, safe_context["PATH"], safe_context)

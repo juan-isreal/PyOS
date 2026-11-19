@@ -8,7 +8,15 @@ import re
 import secrets
 import shlex
 
-DEFAULT_USER_FOLDERS = ("Desktop", "Documents", "Downloads", "Projects")
+DEFAULT_USER_FOLDERS = (
+    "Desktop",
+    "Documents",
+    "Downloads",
+    "Projects",
+    os.path.join("usr", "bin"),
+    os.path.join("usr", "local", "bin"),
+)
+
 
 
 def _format_filename(filename):
