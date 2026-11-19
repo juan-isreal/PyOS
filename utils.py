@@ -16,7 +16,7 @@ DEFAULT_USER_FOLDERS = (
     os.path.join("usr", "bin"),
     os.path.join("usr", "local", "bin"),
 )
-
+_MODULE_CACHE = {}
 
 
 def _format_filename(filename):
@@ -81,27 +81,22 @@ def split_chained_commands(raw_input):
 
 def checkforfile(file, default_data=None):
     filepath = _format_filename(file)
-
     if os.path.exists(filepath):
         return True
-    else:
-        if default_data is None:
-            default_data = []
-
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(default_data, f, indent=4)
-        return False
+    if default_data is None:
+        default_data = []
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(default_data, f, indent=4)
+    return False
 
 
 def load_json(filename, default_data=None):
     filepath = _format_filename(filename)
     if default_data is None:
         default_data = {}
-
     if not os.path.exists(filepath):
         save_json(filepath, default_data)
         return default_data
-
     with open(filepath, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -114,15 +109,11 @@ def save_json(filename, data):
 
 def append_data(new_data, file):
     filepath = _format_filename(file)
-
     if not checkforfile(filepath, default_data=[new_data]):
         return
-
     with open(filepath, "r", encoding="utf-8") as f:
         existing_data = json.load(f)
-
     existing_data.append(new_data)
-
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(existing_data, f, indent=4)
 
@@ -142,40 +133,47 @@ def valid_input(prompt, length=1, error="Invalid Input.\nPlease try again.", sec
         print(str(error))
 
 
-def scan_commands(commands_dir, context):
+def scan_commands(search_paths, context):
+    if isinstance(search_paths, str):
+        search_paths = [search_paths]
+
     valid_cmds = []
     coos_cmds = []
 
-    if not os.path.isdir(commands_dir):
-        context["COOS"] = []
-        return valid_cmds
-
-    for f in sorted(os.listdir(commands_dir)):
-        if not f.endswith(".py") or f.startswith("_"):
+    for folder in search_paths:
+        if not os.path.isdir(folder):
             continue
-        if not os.path.isfile(os.path.join(commands_dir, f)):
-            continue
+        for f in sorted(os.listdir(folder)):
+            if not f.endswith(".py") or f.startswith("_"):
+                continue
+            if not os.path.isfile(os.path.join(folder, f)):
+                continue
 
-        cmd_name = f.removesuffix(".py")
+            cmd_name = f.removesuffix(".py")
+            if cmd_name.lower() == "coos":
+                if cmd_name not in valid_cmds:
+                    valid_cmds.append(cmd_name)
+                continue
 
-        if cmd_name.lower() == "coos":
-            valid_cmds.append(cmd_name)
-            continue
-
-        if (
-            "coos" in cmd_name.lower()
-            or len(cmd_name.split()) > 1
-            or not re.match(r"^[a-z0-9_-]+$", cmd_name)
-        ):
-            coos_cmds.append(cmd_name)
-        else:
-            valid_cmds.append(cmd_name)
+            if (
+                "coos" in cmd_name.lower()
+                or len(cmd_name.split()) > 1
+                or not re.match(r"^[a-z0-9_-]+$", cmd_name)
+            ):
+                if cmd_name not in coos_cmds:
+                    coos_cmds.append(cmd_name)
+            else:
+                if cmd_name not in valid_cmds:
+                    valid_cmds.append(cmd_name)
 
     context["COOS"] = coos_cmds
     return valid_cmds
 
 
-def run_command(raw_input, commands_dir, context):
+def run_command(raw_input, search_paths, context):
+    if isinstance(search_paths, str):
+        search_paths = context.get("PATH", [search_paths])
+
     try:
         parts = shlex.split(raw_input.strip())
     except ValueError:
@@ -184,11 +182,10 @@ def run_command(raw_input, commands_dir, context):
     if not parts:
         return
 
-    cmd_name = parts[0].lower()
-
+    cmd_name = next(iter(parts)).lower()
     args = parts[1:]
 
-    scan_commands(commands_dir, context)
+    scan_commands(search_paths, context)
 
     for coos_name in context.get("COOS", []):
         clean_coos = re.sub(r"coos", "", coos_name, flags=re.IGNORECASE).strip(" _-")
@@ -200,15 +197,27 @@ def run_command(raw_input, commands_dir, context):
         print("Invalid command name.")
         return
 
-    cmd_path = os.path.join(commands_dir, f"{cmd_name}.py")
-    if not os.path.isfile(cmd_path):
+    cmd_path = None
+    for folder in search_paths:
+        candidate = os.path.join(folder, f"{cmd_name}.py")
+        if os.path.isfile(candidate):
+            cmd_path = candidate
+            break
+
+    if not cmd_path:
         print(f"Command '{cmd_name}' not found. Type 'help' for a list of commands.")
         return
 
     try:
-        spec = importlib.util.spec_from_file_location(cmd_name, cmd_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        mtime = os.path.getmtime(cmd_path)
+        cached = _MODULE_CACHE.get(cmd_path)
+        if cached and cached == mtime:
+            module = cached
+        else:
+            spec = importlib.util.spec_from_file_location(cmd_name, cmd_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            _MODULE_CACHE[cmd_path] = (mtime, module)
 
         if hasattr(module, "run"):
             sig = inspect.signature(module.run)
