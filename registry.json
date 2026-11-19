@@ -9,9 +9,11 @@
         "cmd": "curl",
         "desc": "Transfer data from or to a server"
     },
-    "python3": "https://githubusercontent.com",
-    "8ball": "https://githubusercontent.com",
-    "spin": "https://githubusercontent.com",
+    "python3": {
+        "type": "host",
+        "cmd": "python3",
+        "desc": "Python 3 interpreter"
+    },
     "jq": {
         "type": "github",
         "url": "jqlang/jq"
