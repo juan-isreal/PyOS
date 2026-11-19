@@ -9,7 +9,7 @@ echo "==> Checking latest release for ${REPO}..."
 DOWNLOAD_URL=$(REPO="$REPO" python3 - <<'EOF'
 import json, os, sys, urllib.request
 
-repo = os.environ["REPO"]
+repo = os.getenv("REPO")
 api_url = f"https://github.com{repo}/releases"
 req = urllib.request.Request(api_url, headers={"User-Agent": "PyOS-Installer/1.0"})
 with urllib.request.urlopen(req, timeout=15) as resp:
@@ -21,15 +21,15 @@ if not releases:
 
 latest = next(iter(releases))
 tag = latest.get("tag_name", "unknown")
-assets = latest.get("assets", [])
-zip_asset = next((a for a in assets if a["name"].endswith(".zip") and "macOS" not in a["name"]), None)
+assets = latest.get("assets", ())
+zip_asset = next((a for a in assets if a.get("name", "").endswith(".zip") and "macOS" not in a.get("name", "")), None)
 
 if not zip_asset:
     sys.stderr.write(f"No release .zip asset found for {tag}.\n")
     sys.exit(1)
 
-sys.stderr.write(f"==> Found latest release: {tag} ({zip_asset['name']})\n")
-print(zip_asset["browser_download_url"])
+sys.stderr.write(f"==> Found latest release: {tag} ({zip_asset.get('name')})\n")
+print(zip_asset.get("browser_download_url"))
 EOF
 )
 
