@@ -115,3 +115,4 @@ temp/
 # git stuff
 .git/
 update.sh
+test.sh
