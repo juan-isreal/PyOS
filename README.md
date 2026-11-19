@@ -41,7 +41,7 @@ PyOS/
 ### Installation & Setup
 1. Download PyOS and open the folder:
    ```bash
-   cd ~ && git clone https://github.com && cd PyOS
+   cd ~ && git clone https://github.com/juan-isreal/PyOS.git && cd PyOS
    ```
 2. Launch PyOS to run first-time setup (creates your user account and `~/` folders):
    ```bash
