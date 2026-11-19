@@ -39,61 +39,19 @@ PyOS/
 ### Prerequisites
 - **Python 3.10+** (uses only the Python Standard Library—zero external `pip` installs required!)
 
-### Installation & Setup
+### Quick Install (Latest Release — Recommended)
+Download, extract, and launch the latest PyOS release automatically in one command:
+```bash
+curl -fsSL https://githubusercontent.com | bash
+```
+*(To launch in CLI mode instead of the GUI, run `curl -fsSL https://githubusercontent.com | bash -s -- --cli`.)*
+
+### Manual Source Setup (Developers)
 1. Clone PyOS and open the folder:
    ```bash
    cd ~ && git clone https://github.com && cd PyOS
    ```
-2. Launch PyOS to run first-time setup (creates your user account and `~/` folders):
+2. Launch PyOS:
    ```bash
    python3 gui.py
    ```
-   *Or run in CLI mode:*
-   ```bash
-   python3 main.py
-   ```
-3. Enter a new username and password when prompted, then type `help` or `startx` to explore!
-
----
-
-## Built-in Commands
-
-| Command | Description |
-| :--- | :--- |
-| `help` | List all built-in system commands and installed `PATH` apps |
-| `pypm` | Install, search, link, inspect, or remove packages (`pypm install <name\|owner/repo>`) |
-| `path` | View or add/remove directories in your virtual `PATH` |
-| `startx` | Launch the graphical Linux-style Desktop Environment |
-| `ls` / `tree` | List files or display a visual directory tree |
-| `cd <path>` | Change directory (`~`, `..`, or relative paths inside `~/`) |
-| `pwd` | Print current virtual path |
-| `mkdir` / `touch` | Create one or more folders or empty files |
-| `cat` / `rm` | Read or delete one or more files or folders |
-| `run <file>` | Execute a `.py`, `.pyc`, or native executable |
-| `sysinfo` | Display user, Python version, and `PATH` status |
-| `repass <old> <new>` | Update your password (re-salted with new random iterations) |
-| `clear` | Clear the terminal screen |
-| `logout` / `exit` | Lock session or exit PyOS |
-
----
-
-## Building Custom Commands (`tsdk`)
-
-Create any `.py` file inside `commands/` or `~/usr/bin/` with a `run(args, context)` function. Use `tsdk` so your app works seamlessly in both `gui.py` and `main.py`:
-
-```python
-import tsdk
-
-DESCRIPTION = "Greets the user and saves a note."
-
-def run(args, context):
-    name = tsdk.ask("What is your name? ")
-    tsdk.write_file("greeting.txt", f"Hello, {name}!\n", context)
-    tsdk.out(f"Saved greeting for {name} in {context['cwd']}!")
-```
-
----
-
-## License
-
-This project is open source under the [MIT License](LICENSE).
