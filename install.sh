@@ -6,15 +6,12 @@ INSTALL_DIR="${HOME}/PyOS"
 
 echo "==> Checking latest release for ${REPO}..."
 
-DOWNLOAD_URL=$(REPO="$REPO" python3 - <<'EOF'
-import json, os, sys, urllib.request
+RELEASE_JSON=$(curl -fsSL -H "User-Agent: PyOS-Installer/1.0" "https://github.com{REPO}/releases")
 
-repo = os.getenv("REPO")
-api_url = f"https://github.com{repo}/releases"
-req = urllib.request.Request(api_url, headers={"User-Agent": "PyOS-Installer/1.0"})
-with urllib.request.urlopen(req, timeout=15) as resp:
-    releases = json.loads(resp.read().decode("utf-8"))
+DOWNLOAD_URL=$(RELEASE_JSON="$RELEASE_JSON" python3 - <<'EOF'
+import json, os, sys
 
+releases = json.loads(os.getenv("RELEASE_JSON", "[]"))
 if not releases:
     sys.stderr.write("No releases found on GitHub.\n")
     sys.exit(1)
