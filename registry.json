@@ -1,0 +1,19 @@
+{
+    "git": {
+        "type": "host",
+        "cmd": "git",
+        "desc": "Git version control system"
+    },
+    "curl": {
+        "type": "host",
+        "cmd": "curl",
+        "desc": "Transfer data from or to a server"
+    },
+    "python3": "https://githubusercontent.com",
+    "8ball": "https://githubusercontent.com",
+    "spin": "https://githubusercontent.com",
+    "jq": {
+        "type": "github",
+        "url": "jqlang/jq"
+    }
+}
