@@ -6,10 +6,10 @@ INSTALL_DIR="${HOME}/PyOS"
 
 echo "==> Checking latest release for ${REPO}..."
 
-DOWNLOAD_URL=$(python3 - "$REPO" <<'EOF'
-import json, sys, urllib.request
+DOWNLOAD_URL=$(REPO="$REPO" python3 - <<'EOF'
+import json, os, sys, urllib.request
 
-repo = sys.argv
+repo = os.environ["REPO"]
 api_url = f"https://github.com{repo}/releases"
 req = urllib.request.Request(api_url, headers={"User-Agent": "PyOS-Installer/1.0"})
 with urllib.request.urlopen(req, timeout=15) as resp:
