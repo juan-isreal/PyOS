@@ -1,7 +1,15 @@
+import fcntl
 import io
 import os
+import pty
+import re
+import select
 import shlex
+import signal
+import struct
+import subprocess
 import sys
+import termios
 import threading
 import tkinter as tk
 import system_cmds
@@ -12,16 +20,37 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_NAME = os.path.join(BASE_DIR, "data.json")
 COMMANDS_DIR = os.path.join(BASE_DIR, "commands")
 FILES_ROOT = os.path.join(BASE_DIR, "files", "users")
+VERSION_FILE = os.path.join(BASE_DIR, "VERSION")
 
 os.makedirs(COMMANDS_DIR, exist_ok=True)
 os.makedirs(FILES_ROOT, exist_ok=True)
+
+ANSI_RE = re.compile(r"\x1b\[([0-9;]*)([A-Za-z])")
+OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+
+ANSI_COLORS = {
+    "30": "#4E4E4E", "31": "#FF5F56", "32": "#27C93F", "33": "#FFBD2E",
+    "34": "#57A6FF", "35": "#D28BFF", "36": "#56D4DD", "37": "#F2F2F2",
+    "90": "#808080", "91": "#FF6E67", "92": "#5AF78E", "93": "#F4F99D",
+    "94": "#CAA9FA", "95": "#FF92D0", "96": "#9AEDFE", "97": "#FFFFFF",
+}
+
+
+def _read_version():
+    if os.path.isfile(VERSION_FILE):
+        with open(VERSION_FILE, "r", encoding="utf-8") as f:
+            ver = f.read().strip()
+            if ver:
+                return f"v{ver}" if not ver.startswith("v") else ver
+    return "v0.1.0-beta.1"
 
 
 class MacOSTerminalApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("PyOS Terminal")
-        self.root.geometry("760x480")
+        self.version = _read_version()
+        self.root.title(f"PyOS Terminal ({self.version})")
+        self.root.geometry("820x520")
         self.root.configure(bg="#1E1E1E")
 
         self.text = tk.Text(
@@ -39,6 +68,12 @@ class MacOSTerminalApp:
         )
         self.text.pack(fill="both", expand=True)
 
+        self.active_fg_tag = None
+        self.active_bold = False
+        self.text.tag_configure("ansi_bold", font=("Menlo", 13, "bold"))
+        for code, hex_col in ANSI_COLORS.items():
+            self.text.tag_configure(f"ansi_{code}", foreground=hex_col)
+
         self.input_start = "1.0"
         self.secret_mode = False
         self.secret_buffer = ""
@@ -50,13 +85,16 @@ class MacOSTerminalApp:
         self.sdk_input_value = ""
         self.command_running = False
 
+        self.pty_master_fd = None
+        self.pty_proc = None
+
         self.state = "SHELL"
         self.temp_username = ""
         self.login_attempts = 0
         self.data = utils.load_json(FILE_NAME, default_data={})
         self.safe_context = None
 
-        tsdk._gui_print = lambda text: self.root.after(0, lambda: self.write(text))
+        tsdk._gui_print = lambda text: self.root.after(0, lambda t=text: self.write_ansi(t))
         tsdk._gui_ask = self.gui_ask_from_thread
         tsdk._gui_clear = lambda: self.root.after(0, self.clear_screen)
         tsdk._gui_run_on_ui = lambda fn: self.root.after(0, fn)
@@ -70,13 +108,69 @@ class MacOSTerminalApp:
         self.text.bind("<Return>", self.on_enter)
         self.text.bind("<BackSpace>", self.on_backspace)
         self.text.bind("<Left>", self.on_left)
+        self.text.bind("<Right>", self.on_right)
         self.text.bind("<Home>", self.on_home)
         self.text.bind("<Up>", self.on_history_up)
         self.text.bind("<Down>", self.on_history_down)
+        self.text.bind("<Control-c>", self.on_ctrl_c)
+        self.text.bind("<Control-d>", self.on_ctrl_d)
         self.text.bind("<Key>", self.on_key)
         self.text.bind("<Button-1>", self.on_click)
 
         self.boot()
+
+    def write(self, msg=""):
+        self.text.insert("end", str(msg))
+        self.text.see("end")
+        self.input_start = self.text.index("end-1c")
+
+    def write_ansi(self, raw_text):
+        cleaned = OSC_RE.sub("", str(raw_text)).replace("\r\n", "\n")
+        pos = 0
+        for match in ANSI_RE.finditer(cleaned):
+            chunk = cleaned[pos:match.start()]
+            if chunk:
+                self._insert_styled_chunk(chunk)
+            params, cmd_char = match.group(1), match.group(2)
+            if cmd_char == "m":
+                for p in (params.split(";") if params else ["0"]):
+                    if p == "0" or p == "":
+                        self.active_fg_tag = None
+                        self.active_bold = False
+                    elif p == "1":
+                        self.active_bold = True
+                    elif p in ANSI_COLORS:
+                        self.active_fg_tag = f"ansi_{p}"
+            elif cmd_char == "J" and params in ("2", "3"):
+                self.clear_screen()
+            pos = match.end()
+
+        tail = cleaned[pos:]
+        if tail:
+            self._insert_styled_chunk(tail)
+
+        self.text.see("end")
+        self.input_start = self.text.index("end-1c")
+
+    def _insert_styled_chunk(self, chunk):
+        for ch in chunk:
+            if ch == "\b":
+                if self.text.compare("end-1c", ">", "1.0"):
+                    self.text.delete("end-2c", "end-1c")
+            elif ch == "\r":
+                line_start = self.text.index("end-1c linestart")
+                self.text.delete(line_start, "end-1c")
+            else:
+                tags = []
+                if self.active_fg_tag:
+                    tags.append(self.active_fg_tag)
+                if self.active_bold:
+                    tags.append("ansi_bold")
+                self.text.insert("end", ch, tuple(tags))
+
+    def clear_screen(self):
+        self.text.delete("1.0", "end")
+        self.input_start = "1.0"
 
     def gui_ask_from_thread(self, prompt="", secret=False):
         self.sdk_input_event.clear()
@@ -89,17 +183,8 @@ class MacOSTerminalApp:
         self.sdk_input_event.wait()
         return self.sdk_input_value
 
-    def write(self, msg=""):
-        self.text.insert("end", str(msg))
-        self.text.see("end")
-        self.input_start = self.text.index("end-1c")
-
-    def clear_screen(self):
-        self.text.delete("1.0", "end")
-        self.input_start = "1.0"
-
     def boot(self):
-        self.write("Last login: Today on ttys000\n")
+        self.write(f"PyOS {self.version} — Ready on ttys000\n")
         if len(self.data.get("username") or "") <= 1 or not self.data.get("password_hash"):
             self.state = "SETUP_USER"
             self.prompt_user("Create Username: ", secret=False)
@@ -141,11 +226,13 @@ class MacOSTerminalApp:
 
         self.safe_context = {
             "username": self.data["username"],
+            "version": self.version,
             "commands_dir": COMMANDS_DIR,
             "home_dir": user_home,
             "cwd": user_home,
             "PATH": saved_path,
             "COOS": [],
+            "pty_exec": self.run_in_pty,
             "verify_password": lambda attempt: utils.verify_password(
                 attempt, self.data["password_hash"]
             ),
@@ -162,13 +249,95 @@ class MacOSTerminalApp:
     def show_shell_prompt(self):
         rel_path = os.path.relpath(self.safe_context["cwd"], self.safe_context["home_dir"])
         prompt_path = "~" if rel_path == "." else f"~/{rel_path}"
-        self.root.title(f"{self.data['username']} - {prompt_path} - PyOS")
+        self.root.title(f"{self.data['username']} - {prompt_path} - PyOS {self.version}")
         self.prompt_user(f"{self.data['username']}:{prompt_path} $ ", secret=False)
+    def run_in_pty(self, cmd_list, cwd=None):
+        """Execute any command inside a real POSIX PTY with live streaming & keyboard input."""
+        master_fd, slave_fd = pty.openpty()
+        winsize = struct.pack("HHHH", 28, 96, 0, 0)
+        fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, winsize)
+
+        env = os.environ.copy()
+        env["TERM"] = "xterm-256color"
+
+        proc = subprocess.Popen(
+            cmd_list,
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            cwd=cwd or self.safe_context["cwd"],
+            env=env,
+            start_new_session=True,
+            close_fds=True,
+        )
+        os.close(slave_fd)
+        self.pty_master_fd = master_fd
+        self.pty_proc = proc
+
+        try:
+            while True:
+                rlist, _, _ = select.select([master_fd], [], [], 0.05)
+                if master_fd in rlist:
+                    try:
+                        data = os.read(master_fd, 4096)
+                        if not data:
+                            break
+                        text_out = data.decode("utf-8", errors="replace")
+                        self.root.after(0, lambda t=text_out: self.write_ansi(t))
+                    except OSError:
+                        break
+                if proc.poll() is not None:
+                    while True:
+                        r2, _, _ = select.select([master_fd], [], [], 0.01)
+                        if master_fd not in r2:
+                            break
+                        try:
+                            rem = os.read(master_fd, 4096)
+                            if not rem:
+                                break
+                            text_out = rem.decode("utf-8", errors="replace")
+                            self.root.after(0, lambda t=text_out: self.write_ansi(t))
+                        except OSError:
+                            break
+                    break
+        finally:
+            self.pty_master_fd = None
+            self.pty_proc = None
+            try:
+                os.close(master_fd)
+            except OSError:
+                pass
+
+    def _send_pty(self, raw_bytes):
+        if self.pty_master_fd is not None:
+            try:
+                os.write(self.pty_master_fd, raw_bytes)
+            except OSError:
+                pass
+
+    def on_ctrl_c(self, event):
+        if self.pty_master_fd is not None:
+            self._send_pty(b"\x03")
+            return "break"
+
+    def on_ctrl_d(self, event):
+        if self.pty_master_fd is not None:
+            self._send_pty(b"\x04")
+            return "break"
+
     def on_click(self, event):
         self.root.after(1, lambda: self.text.mark_set("insert", "end"))
 
     def on_left(self, event):
+        if self.pty_master_fd is not None:
+            self._send_pty(b"\x1b[D")
+            return "break"
         if self.text.compare("insert", "<=", self.input_start):
+            return "break"
+
+    def on_right(self, event):
+        if self.pty_master_fd is not None:
+            self._send_pty(b"\x1b[C")
             return "break"
 
     def on_home(self, event):
@@ -176,12 +345,20 @@ class MacOSTerminalApp:
         return "break"
 
     def on_backspace(self, event):
+        if self.pty_master_fd is not None:
+            self._send_pty(b"\x7f")
+            return "break"
         if self.text.compare("insert", "<=", self.input_start):
             return "break"
         if self.secret_mode and self.secret_buffer:
             self.secret_buffer = self.secret_buffer[:-1]
 
     def on_key(self, event):
+        if self.pty_master_fd is not None:
+            if event.char:
+                self._send_pty(event.char.encode("utf-8"))
+            return "break"
+
         if event.state & 0x4 or event.state & 0x8:
             return
         if self.text.compare("insert", "<", self.input_start):
@@ -192,6 +369,9 @@ class MacOSTerminalApp:
             return "break"
 
     def on_history_up(self, event):
+        if self.pty_master_fd is not None:
+            self._send_pty(b"\x1b[A")
+            return "break"
         if self.state != "SHELL" or self.command_running or not self.history:
             return "break"
         self.history_index = max(0, self.history_index - 1)
@@ -200,6 +380,9 @@ class MacOSTerminalApp:
         return "break"
 
     def on_history_down(self, event):
+        if self.pty_master_fd is not None:
+            self._send_pty(b"\x1b[B")
+            return "break"
         if self.state != "SHELL" or self.command_running or not self.history:
             return "break"
         self.history_index = min(len(self.history), self.history_index + 1)
@@ -209,6 +392,10 @@ class MacOSTerminalApp:
         return "break"
 
     def on_enter(self, event):
+        if self.pty_master_fd is not None:
+            self._send_pty(b"\r")
+            return "break"
+
         if self.secret_mode:
             raw = self.secret_buffer
         else:
@@ -310,6 +497,11 @@ class MacOSTerminalApp:
                 self.root.after(0, self.clear_screen)
                 continue
 
+            # Allow direct interactive PTY execution with 'pty <cmd> [args...]'
+            if cmd == "pty" and args:
+                self.run_in_pty(args, cwd=self.safe_context["cwd"])
+                continue
+
             buffer = io.StringIO()
             old_stdout = sys.stdout
             sys.stdout = buffer
@@ -323,7 +515,7 @@ class MacOSTerminalApp:
             output = buffer.getvalue()
             if output:
                 text_to_write = output if output.endswith("\n") else output + "\n"
-                self.root.after(0, lambda t=text_to_write: self.write(t))
+                self.root.after(0, lambda t=text_to_write: self.write_ansi(t))
 
         self.command_running = False
         self.root.after(0, self.show_shell_prompt)

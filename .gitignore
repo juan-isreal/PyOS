@@ -116,4 +116,3 @@ temp/
 .git/
 update.sh
 test.sh
-release.sh
