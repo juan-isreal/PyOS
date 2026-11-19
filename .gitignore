@@ -116,3 +116,5 @@ temp/
 .git/
 update.sh
 test.sh
+write.py
+GEMINI.md
